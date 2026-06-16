@@ -334,6 +334,10 @@ const QUESTIONS: Question[] = CATEGORIES.flatMap((category) =>
 );
  
 const THINK_OPTIONS = [10, 15, 20, 30];
+
+// Answer phase pacing: warn at 1:00, auto-advance to the next question at 1:30.
+const ANSWER_WARN = 60;
+const ANSWER_LIMIT = 90;
  
 const TIPS = [
   "Take a breath. Outline 2–3 key points before you start.",
@@ -594,13 +598,14 @@ function App() {
     beep(760, 230, 0.08);
   }
  
-  function goNext() {
+  function goNext(elapsedOverride?: number) {
     setResults((r) => [
       ...r,
       {
         text: queue[index].text,
         category: queue[index].category,
-        seconds: phase === "answering" ? answerElapsed : 0,
+        seconds:
+          phase === "answering" ? elapsedOverride ?? answerElapsed : 0,
         skipped: phase === "thinking",
       },
     ]);
@@ -638,7 +643,18 @@ function App() {
       }, 1000);
       return () => clearTimeout(id);
     }
-    const id = setTimeout(() => setAnswerElapsed(answerElapsed + 1), 1000);
+    const id = setTimeout(() => {
+      const next = answerElapsed + 1;
+      // Sound once the answer passes the 1:00 mark — a cue to start wrapping up.
+      if (next === ANSWER_WARN) beep(430, 260, 0.07);
+      if (next >= ANSWER_LIMIT) {
+        // Time's up at 1:30 — chime and move on to the next question automatically.
+        beep(300, 380, 0.09);
+        goNext(ANSWER_LIMIT);
+      } else {
+        setAnswerElapsed(next);
+      }
+    }, 1000);
     return () => clearTimeout(id);
   }, [screen, paused, phase, thinkLeft, answerElapsed]); // eslint-disable-line react-hooks/exhaustive-deps
  
@@ -834,7 +850,7 @@ function App() {
             <>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 {!paused && <span className="rec-dot" />}
-                <span className="mono" style={{ fontSize: 52, fontWeight: 700, letterSpacing: "-0.02em" }}>
+                <span className="mono" style={{ fontSize: 52, fontWeight: 700, letterSpacing: "-0.02em", color: answerElapsed >= ANSWER_WARN ? "var(--warn)" : undefined }}>
                   {formatTime(answerElapsed)}
                 </span>
               </div>
@@ -843,7 +859,11 @@ function App() {
                   <Mic size={16} style={{ color: "var(--warn)" }} /> {paused ? "Paused" : "Answering — speak aloud"}
                 </div>
                 <div className="muted" style={{ fontSize: 14, marginTop: 6 }}>
-                  Press <strong>Next question</strong> when you've finished your answer.
+                  {answerElapsed >= ANSWER_WARN ? (
+                    <>Wrap up — moves on automatically at {formatTime(ANSWER_LIMIT)}.</>
+                  ) : (
+                    <>Press <strong>Next question</strong> when you've finished your answer.</>
+                  )}
                 </div>
               </div>
             </>
@@ -857,12 +877,12 @@ function App() {
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={startAnswering}>
                 <Mic size={18} /> Start answering
               </button>
-              <button className="btn btn-ghost" onClick={goNext}>
+              <button className="btn btn-ghost" onClick={() => goNext()}>
                 <SkipForward size={17} /> Skip
               </button>
             </>
           ) : (
-            <button className="btn btn-primary btn-block" onClick={goNext}>
+            <button className="btn btn-primary btn-block" onClick={() => goNext()}>
               {index + 1 >= queue.length ? <Check size={18} /> : <ArrowRight size={18} />}
               {index + 1 >= queue.length ? "Finish session" : "Next question"}
             </button>
